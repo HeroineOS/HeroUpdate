@@ -1,0 +1,134 @@
+#!/bin/sh
+# heroupdate: installs the newest HeroineOS components from their GitHub
+# releases (the .deb for this machine), only those newer than what's
+# installed, and restarts the ones that are running. Needs curl, dpkg, apt.
+set -eu
+
+VERSION=0.1.0
+SELF_URL=https://raw.githubusercontent.com/HeroineOS/HeroUpdate/main/heroupdate
+# GitHub repository and package, one per line.
+COMPONENTS="HeroBar herobar
+HeroLauncher herolauncher
+HeroAppearance heroappearance
+HeroWallpaper herowallpaper
+HeroPortal heroportal
+HeroUI heroui-demos"
+
+usage() {
+    cat <<USAGE
+heroupdate $VERSION - update the HeroineOS components from their releases
+
+Usage: heroupdate [--check] [--yes] [--with-demos]
+  --check        only list what's newer, change nothing
+  --yes          don't ask before installing
+  --with-demos   also install heroui-demos (otherwise only updated if installed)
+  --self-update  replace this script with its newest version
+  --version      print the version
+  --help         print this
+
+Downloads go to \${XDG_CACHE_HOME:-~/.cache}/heroupdate and are removed after
+installing. Running components are restarted: herobar and herowallpaper start
+again, heroportal on the next dialog. Reopen Appearance if it's open.
+USAGE
+}
+
+check=0 yes=0 demos=0
+for a in "$@"; do
+    case $a in
+        --check) check=1 ;;
+        --yes|-y) yes=1 ;;
+        --with-demos) demos=1 ;;
+        --self-update)
+            tmp=$(mktemp)
+            curl -fsSL "$SELF_URL" -o "$tmp" && sh -n "$tmp" && chmod +x "$tmp" && mv "$tmp" "$0" && echo "heroupdate updated: $("$0" --version)"
+            exit ;;
+        --version|-V) echo "heroupdate $VERSION"; exit ;;
+        --help|-h) usage; exit ;;
+        *) echo "heroupdate: unknown argument $a (see --help)" >&2; exit 2 ;;
+    esac
+done
+
+for tool in curl dpkg apt; do
+    command -v $tool >/dev/null || { echo "heroupdate: needs $tool" >&2; exit 1; }
+done
+arch=$(dpkg --print-architecture)
+cache=${XDG_CACHE_HOME:-$HOME/.cache}/heroupdate
+mkdir -p "$cache"
+
+installed() { dpkg-query -W -f='${Status} ${Version}' "$1" 2>/dev/null | sed -n 's/^install ok installed //p'; }
+
+# "package version url" lines, from the loop below (a subshell).
+rm -f "$cache/.todo"
+echo "Checking for updates ($arch)..."
+echo "$COMPONENTS" | while read -r repo pkg; do
+    have=$(installed "$pkg")
+    if [ "$pkg" = heroui-demos ] && [ -z "$have" ] && [ $demos = 0 ]; then
+        continue
+    fi
+    # Newest release first; its .deb for this machine.
+    url=$(curl -fsSL "https://api.github.com/repos/HeroineOS/$repo/releases?per_page=5" 2>/dev/null \
+        | grep -o '"browser_download_url": *"[^"]*"' | sed 's/.*"\(https[^"]*\)"/\1/' \
+        | grep "/${pkg}_[^/]*_${arch}\(-testing\)\?\.deb$" | head -n 1) || true
+    if [ -z "$url" ]; then
+        printf '  %-16s no release for %s found\n' "$pkg" "$arch"
+        continue
+    fi
+    new=$(basename "$url" | sed "s/^${pkg}_\(.*\)_${arch}.*\.deb$/\1/")
+    if [ -n "$have" ] && dpkg --compare-versions "$have" ge "$new"; then
+        printf '  %-16s %s (up to date)\n' "$pkg" "$have"
+    else
+        printf '  %-16s %s -> %s\n' "$pkg" "${have:-not installed}" "$new"
+        echo "$pkg $new $url" >> "$cache/.todo"
+    fi
+done
+
+if [ ! -s "$cache/.todo" ]; then
+    rm -f "$cache/.todo"
+    echo "Everything is up to date."
+    exit 0
+fi
+if [ $check = 1 ]; then
+    rm -f "$cache/.todo"
+    exit 0
+fi
+if [ $yes = 0 ]; then
+    printf 'Install these? [Y/n] '
+    read -r answer </dev/tty || answer=n
+    case $answer in [nN]*) rm -f "$cache/.todo"; echo "Nothing changed."; exit 0 ;; esac
+fi
+
+debs=""
+while read -r pkg new url; do
+    f="$cache/$(basename "$url")"
+    echo "Downloading $(basename "$url")..."
+    curl -fsSL "$url" -o "$f"
+    debs="$debs $f"
+    pkgs="${pkgs:-} $pkg"
+done < "$cache/.todo"
+rm -f "$cache/.todo"
+
+# shellcheck disable=SC2086
+sudo apt install -y $debs
+# shellcheck disable=SC2086
+rm -f $debs
+
+# Programs started before the update are still the old ones.
+restart() {
+    if pgrep -x "$1" >/dev/null; then
+        pkill -x "$1" || true
+        sleep 0.3
+        setsid -f "$1" >/dev/null 2>&1 </dev/null
+        echo "Restarted $1."
+    fi
+}
+for pkg in ${pkgs:-}; do
+    case $pkg in
+        herobar|herowallpaper) restart "$pkg" ;;
+        heroportal)
+            # The backend (not open dialogs); D-Bus starts the new one when needed.
+            pkill -fx /usr/bin/heroportal 2>/dev/null && echo "Restarted heroportal." || true ;;
+        heroappearance)
+            pgrep -x heroappearance >/dev/null && echo "Appearance is open: reopen it to use the new version." || true ;;
+    esac
+done
+echo "Done."
