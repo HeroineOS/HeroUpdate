@@ -4,7 +4,7 @@
 # installed, and restarts the ones that are running. Needs curl, dpkg, apt.
 set -eu
 
-VERSION=0.1.1
+VERSION=0.1.2
 SELF_URL=https://raw.githubusercontent.com/HeroineOS/HeroUpdate/main/heroupdate
 # GitHub repository and package, one per line.
 COMPONENTS="HeroBar herobar
@@ -23,7 +23,9 @@ Usage: heroupdate [--check] [--yes] [--with-demos]
   --check        only list what's newer, change nothing
   --yes          don't ask before installing
   --with-demos   also install heroui-demos (otherwise only updated if installed)
-  --self-update  replace this script with its newest version
+  --self-update  replace this script with its newest version, and stop
+  --no-self-update  don't (it does before every run: new components come
+                 with the newest script)
   --version      print the version
   --help         print this
 
@@ -33,12 +35,13 @@ again, heroportal on the next dialog, heronotify with the next notification. Reo
 USAGE
 }
 
-check=0 yes=0 demos=0
+check=0 yes=0 demos=0 self=${HEROUPDATE_NO_SELF:+0}; self=${self:-1}
 for a in "$@"; do
     case $a in
         --check) check=1 ;;
         --yes|-y) yes=1 ;;
         --with-demos) demos=1 ;;
+        --no-self-update) self=0 ;;
         --self-update)
             tmp=$(mktemp)
             curl -fsSL "$SELF_URL" -o "$tmp" && sh -n "$tmp" && chmod +x "$tmp" && mv "$tmp" "$0" && echo "heroupdate updated: $("$0" --version)"
@@ -52,6 +55,24 @@ done
 for tool in curl dpkg apt; do
     command -v $tool >/dev/null || { echo "heroupdate: needs $tool" >&2; exit 1; }
 done
+# The newest script first: it knows the newest components.
+if [ "$self" = 1 ]; then
+    tmp=$(mktemp)
+    if curl -fsSL "$SELF_URL" -o "$tmp" 2>/dev/null && sh -n "$tmp" 2>/dev/null && ! cmp -s "$tmp" "$0"; then
+        chmod +x "$tmp"
+        if [ -w "$0" ] && mv "$tmp" "$0"; then
+            echo "heroupdate updated itself ($("$0" --version | cut -d' ' -f2))."
+            HEROUPDATE_NO_SELF=1 exec "$0" "$@"
+        fi
+        # Not ours to replace (installed for everyone): the new one runs once.
+        HEROUPDATE_NO_SELF=1 sh "$tmp" "$@"
+        st=$?
+        rm -f "$tmp"
+        exit $st
+    fi
+    rm -f "$tmp"
+fi
+
 arch=$(dpkg --print-architecture)
 cache=${XDG_CACHE_HOME:-$HOME/.cache}/heroupdate
 mkdir -p "$cache"

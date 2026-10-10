@@ -18,8 +18,12 @@ heroupdate               check, ask, download, install, restart
 heroupdate --check       only list what's newer
 heroupdate --yes         don't ask
 heroupdate --with-demos  include heroui-demos
-heroupdate --self-update get the newest heroupdate
+heroupdate --self-update get the newest heroupdate, and stop
+heroupdate --no-self-update  run this copy as it is
 ```
+
+Before every run it fetches its newest version and, if that's different, replaces itself and
+starts over, so new components (like HeroNotify) come along without a step of your own.
 
 It's a POSIX shell script needing only `curl`, `dpkg` and `apt` (and `sudo` to install).
 GitHub allows 60 unauthenticated API requests an hour; a run uses one per component.
