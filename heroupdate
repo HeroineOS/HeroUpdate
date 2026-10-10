@@ -4,7 +4,7 @@
 # installed, and restarts the ones that are running. Needs curl, dpkg, apt.
 set -eu
 
-VERSION=0.1.0
+VERSION=0.1.1
 SELF_URL=https://raw.githubusercontent.com/HeroineOS/HeroUpdate/main/heroupdate
 # GitHub repository and package, one per line.
 COMPONENTS="HeroBar herobar
@@ -12,6 +12,7 @@ HeroLauncher herolauncher
 HeroAppearance heroappearance
 HeroWallpaper herowallpaper
 HeroPortal heroportal
+HeroNotify heronotify
 HeroUI heroui-demos"
 
 usage() {
@@ -28,7 +29,7 @@ Usage: heroupdate [--check] [--yes] [--with-demos]
 
 Downloads go to \${XDG_CACHE_HOME:-~/.cache}/heroupdate and are removed after
 installing. Running components are restarted: herobar and herowallpaper start
-again, heroportal on the next dialog. Reopen Appearance if it's open.
+again, heroportal on the next dialog, heronotify with the next notification. Reopen Appearance if it's open.
 USAGE
 }
 
@@ -127,6 +128,9 @@ for pkg in ${pkgs:-}; do
         heroportal)
             # The backend (not open dialogs); D-Bus starts the new one when needed.
             pkill -fx /usr/bin/heroportal 2>/dev/null && echo "Restarted heroportal." || true ;;
+        heronotify)
+            # The service; D-Bus starts the new one with the next notification.
+            pkill -fx /usr/bin/heronotify 2>/dev/null && echo "Restarted heronotify." || true ;;
         heroappearance)
             pgrep -x heroappearance >/dev/null && echo "Appearance is open: reopen it to use the new version." || true ;;
     esac
