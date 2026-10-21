@@ -4,7 +4,7 @@
 # installed, and restarts the ones that are running. Needs curl, dpkg, apt.
 set -eu
 
-VERSION=0.1.2
+VERSION=0.1.3
 SELF_URL=https://raw.githubusercontent.com/HeroineOS/HeroUpdate/main/heroupdate
 # GitHub repository and package, one per line.
 COMPONENTS="HeroBar herobar
@@ -13,6 +13,7 @@ HeroAppearance heroappearance
 HeroWallpaper herowallpaper
 HeroPortal heroportal
 HeroNotify heronotify
+HeroSettings herosettings
 HeroUI heroui-demos"
 
 usage() {
@@ -152,6 +153,7 @@ for pkg in ${pkgs:-}; do
         heronotify)
             # The service; D-Bus starts the new one with the next notification.
             pkill -fx /usr/bin/heronotify 2>/dev/null && echo "Restarted heronotify." || true ;;
+        herosettings) pgrep -x herosettings >/dev/null && echo "Settings is open: reopen it to use the new version." || true ;;
         heroappearance)
             pgrep -x heroappearance >/dev/null && echo "Appearance is open: reopen it to use the new version." || true ;;
     esac
